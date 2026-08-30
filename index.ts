@@ -563,9 +563,6 @@ export default function betterGrok(pi: ExtensionAPI): void {
     ) {
       persist(nextConfig);
     }
-    if (fastController.desiredActive && !fastController.active) {
-      ctx.ui.notify(fastController.unsupportedRequestMessage(ctx, nextConfig), "warning");
-    }
     refreshFooterTotals(ctx);
     updateFooter(ctx);
     usageController.start(ctx);
