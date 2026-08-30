@@ -103,13 +103,13 @@ describe("formatters", () => {
   it("renders the footer usage line with reset info", () => {
     const snapshot = parseUsageSnapshot(weeklyCreditsPayload, NOW);
     const line = formatUsageSnapshot(snapshot, { showResetTimes: true }, NOW);
-    expect(line).toContain("Grok: 66% left");
+    expect(line).toContain("Usage: 66% left");
     expect(line).toContain("↺");
   });
 
   it("renders the footer usage line without reset info", () => {
     const snapshot = parseUsageSnapshot(weeklyCreditsPayload, NOW);
-    expect(formatUsageSnapshot(snapshot, { showResetTimes: false }, NOW)).toBe("Grok: 66% left");
+    expect(formatUsageSnapshot(snapshot, { showResetTimes: false }, NOW)).toBe("Usage: 66% left");
   });
 
   it("renders detail lines including product usage", () => {
@@ -121,6 +121,6 @@ describe("formatters", () => {
 
   it("handles a fully used budget", () => {
     const snapshot = parseUsageSnapshot({ config: { creditUsagePercent: 100 } }, NOW);
-    expect(formatUsageSnapshot(snapshot, { showResetTimes: false }, NOW)).toBe("Grok: 0% left");
+    expect(formatUsageSnapshot(snapshot, { showResetTimes: false }, NOW)).toBe("Usage: 0% left");
   });
 });

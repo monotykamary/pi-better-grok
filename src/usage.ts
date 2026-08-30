@@ -237,7 +237,7 @@ export function formatUsageSnapshot(
 ): string {
   const used = snapshot.creditUsagePercent;
   const left = used === null ? null : clampPercent(100 - used);
-  const parts = [`Grok: ${formatPercent(left)} left`];
+  const parts = [`Usage: ${formatPercent(left)} left`];
   if (options.showResetTimes) {
     const seconds = periodSecondsLeft(snapshot, now);
     const countdown = formatResetCountdown(seconds);

@@ -82,7 +82,7 @@ describe("UsageController", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(controller.snapshot).toEqual(snapshot);
     expect(updateFooter).toHaveBeenCalledWith(ctx);
-    expect(controller.statusLine(ctx, config)).toContain("Grok: 66% left");
+    expect(controller.statusLine(ctx, config)).toContain("Usage: 66% left");
   });
 
   it("records errors and hides the status line", async () => {

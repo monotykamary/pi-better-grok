@@ -65,7 +65,7 @@ export const DEFAULT_USAGE_CONFIG: Required<UsageConfig> = {
   showOnlyOnSubscriptionModels: true,
   showResetTimes: true,
 };
-export const DEFAULT_FOOTER_CONFIG: Required<FooterConfig> = { mode: "replace" };
+export const DEFAULT_FOOTER_CONFIG: Required<FooterConfig> = { mode: "status" };
 export const DEFAULT_CONFIG: ConfigFile = {
   persistState: true,
   active: false,

@@ -35,7 +35,7 @@ describe("resolveConfig", () => {
     expect(config.persistState).toBe(true);
     expect(config.active).toBe(false);
     expect(config.desiredActive).toBe(false);
-    expect(config.footer.mode).toBe("replace");
+    expect(config.footer.mode).toBe("status");
     expect(config.usage.enabled).toBe(true);
     expect(config.usage.refreshIntervalMs).toBe(60_000);
     expect(config.usage.showOnlyOnSubscriptionModels).toBe(true);
