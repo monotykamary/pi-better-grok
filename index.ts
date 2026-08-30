@@ -64,6 +64,20 @@ const requireSettingsListTheme = (): SettingsListTheme => {
   return loadedSettingsListTheme;
 };
 
+class DynamicBorder {
+  readonly #color: (text: string) => string;
+
+  constructor(color: (text: string) => string = (str) => str) {
+    this.#color = color;
+  }
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    return [this.#color("\u2500".repeat(Math.max(1, width)))];
+  }
+}
+
 const COMMAND = "grok-fast";
 const USAGE_COMMAND = "grok-usage";
 const SETTINGS_COMMAND = "grok-settings";
@@ -290,13 +304,14 @@ export default function betterGrok(pi: ExtensionAPI): void {
     try {
       await ctx.ui.custom((tui, theme, _kb, done) => {
         const container = new Container();
+        container.addChild(new DynamicBorder((text) => theme.fg("border", text)));
         container.addChild(
           new (class {
             render(_width: number) {
               const cfg = config(ctx);
               return [
-                theme.fg("accent", theme.bold("Better Grok Settings")),
-                theme.fg("dim", cfg.configPath),
+                theme.bold(theme.fg("accent", "Better Grok Settings")),
+                theme.fg("muted", cfg.configPath),
                 "",
               ];
             }
@@ -320,6 +335,7 @@ export default function betterGrok(pi: ExtensionAPI): void {
           { enableSearch: true },
         );
         container.addChild(settingsList);
+        container.addChild(new DynamicBorder((text) => theme.fg("border", text)));
         return {
           render(width: number) {
             return container.render(width);
