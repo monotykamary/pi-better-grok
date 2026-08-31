@@ -1,6 +1,6 @@
 {
   "name": "@monotykamary/pi-better-grok",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Improve Grok/xAI in pi with fast mode, subscription usage stats, footer polish, and settings — mirroring pi-better-openai.",
   "keywords": [
     "footer",
