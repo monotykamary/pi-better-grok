@@ -12,12 +12,12 @@
 Run the narrowest useful test first, then the full gate before committing:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm test -- tests/<file>.test.ts
-pnpm run check
+bun install --frozen-lockfile
+bun run test -- tests/<file>.test.ts
+bun run check
 ```
 
-`pnpm run check` runs typecheck, lint, format check, and all tests. Do not skip it for code changes.
+`bun run check` runs typecheck, lint, format check, and all tests. Do not skip it for code changes.
 
 ## Coding conventions
 
