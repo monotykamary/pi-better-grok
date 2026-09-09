@@ -10,7 +10,27 @@
 import { type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
 import { CONFIG_BASENAME, STATUS_KEY } from "./src/identity.ts";
-import { formatTokens, sanitizeStatusText, truncateToWidth, visibleWidth } from "./src/format.ts";
+import {
+  formatTokens,
+  sanitizeDiagnosticError,
+  sanitizeStatusText,
+  truncateToWidth,
+  visibleWidth,
+} from "./src/format.ts";
+import {
+  isMultiproviderService,
+  MULTIPROVIDER_SERVICE_EVENT,
+  setActiveMultiproviderService,
+  type MultiproviderService,
+} from "./src/multiprovider.ts";
+import {
+  buildGrokResetConfirmation,
+  formatGrokResetChoice,
+  formatGrokResetOutcome,
+  redeemGrokResetForSession,
+  selectGrokResetToken,
+} from "./src/resets.ts";
+import { ResetController } from "./src/reset-controller.ts";
 import {
   applySettingToRawConfig,
   configPaths,
@@ -81,6 +101,7 @@ class DynamicBorder {
 const COMMAND = "grok-fast";
 const USAGE_COMMAND = "grok-usage";
 const SETTINGS_COMMAND = "grok-settings";
+const RESETS_COMMAND = "grok-resets";
 const FLAG = "grok-fast";
 
 type SettingsPickerItem = {
@@ -132,6 +153,39 @@ export default function betterGrok(pi: ExtensionAPI): void {
   let cachedSessionNameLeafId: string | null | undefined;
   let cachedSessionName: string | undefined;
   const usageController = new UsageController(config, updateFooter, fetchUsageSnapshot);
+  const resetController = new ResetController();
+  let multiproviderService: MultiproviderService | undefined;
+  let unsubscribeMultiprovider: (() => void) | undefined;
+  let multiproviderRefreshCtx: ExtensionContext | undefined;
+
+  // Follow pi-multiprovider's active pooled account for the native xAI
+  // providers. The event re-fires with the same stable object at load and
+  // session start; the identity check keeps the change subscriptions attached
+  // exactly once. When the extension is absent, nothing here activates and
+  // credential resolution keeps its standalone behavior.
+  if (typeof pi.events?.on === "function") {
+    pi.events.on(MULTIPROVIDER_SERVICE_EVENT, (value) => {
+      if (!isMultiproviderService(value) || value === multiproviderService) return;
+      unsubscribeMultiprovider?.();
+      multiproviderService = value;
+      setActiveMultiproviderService(value);
+      const offs = XAI_PROVIDER_IDS.map((providerId) =>
+        value.onActiveAccountChanged(providerId, (event) => {
+          void usageController.refresh(event.ctx, { force: true });
+          void resetController.refresh(event.ctx, { force: true }).catch(() => {});
+          updateFooter(event.ctx);
+        }),
+      );
+      unsubscribeMultiprovider = () => {
+        for (const off of offs) off();
+      };
+      const ctx = multiproviderRefreshCtx;
+      if (ctx) {
+        void usageController.refresh(ctx, { force: true });
+        updateFooter(ctx);
+      }
+    });
+  }
 
   function refresh(ctx: ExtensionContext): ResolvedConfig {
     cachedConfig = resolveConfig(ctx.cwd || process.cwd());
@@ -239,6 +293,64 @@ export default function betterGrok(pi: ExtensionAPI): void {
       ctx.ui.notify("Usage: /grok-fast", "error");
     },
   });
+
+  async function redeemBankedReset(ctx: ExtensionContext): Promise<void> {
+    if (!hasTerminalUI(ctx)) {
+      ctx.ui.notify("/grok-resets requires an interactive TUI session.", "warning");
+      return;
+    }
+    let credits = resetController.snapshot?.credits;
+    if (!credits) {
+      await resetController.refresh(ctx, { force: true }).catch(() => {});
+      credits = resetController.snapshot?.credits;
+    }
+    if (!credits) {
+      const reason = resetController.lastError;
+      ctx.ui.notify(`Banked reset lookup failed${reason ? `: ${reason}` : "."}`, "error");
+      return;
+    }
+    void resetController.refresh(ctx).catch(() => {});
+    if (credits.availableCount <= 0) {
+      ctx.ui.notify("No banked Grok resets are available for this account.", "info");
+      return;
+    }
+    let selected = selectGrokResetToken(credits.tokens);
+    if (credits.tokens.length > 1 && selected) {
+      const options = credits.tokens.map((token, index) => formatGrokResetChoice(token, index));
+      const chosen = await ctx.ui.select("Redeem which banked reset?", options);
+      if (chosen === undefined) {
+        ctx.ui.notify("Banked reset redemption cancelled.", "info");
+        return;
+      }
+      selected = credits.tokens[Math.max(0, options.indexOf(chosen))];
+    }
+    const confirmation = buildGrokResetConfirmation({
+      token: selected,
+      availableCount: credits.availableCount,
+      snapshot: usageController.snapshot,
+    });
+    if (!(await ctx.ui.confirm(confirmation.title, confirmation.message))) {
+      ctx.ui.notify("Banked reset redemption cancelled.", "info");
+      return;
+    }
+    try {
+      const timeoutSignal = AbortSignal.timeout(30_000);
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeoutSignal]) : timeoutSignal;
+      const result = await redeemGrokResetForSession(ctx, selected?.tokenId, signal);
+      const outcome = formatGrokResetOutcome(result);
+      ctx.ui.notify(outcome.message, outcome.level);
+      void usageController.refresh(ctx, { force: true });
+      void resetController.refresh(ctx, { force: true }).catch(() => {});
+      updateFooter(ctx);
+    } catch (error) {
+      ctx.ui.notify(
+        `Banked reset redemption failed: ${sanitizeDiagnosticError(
+          error instanceof Error ? error.message : String(error),
+        )}`,
+        "error",
+      );
+    }
+  }
 
   pi.registerCommand(USAGE_COMMAND, {
     description: "Show Grok subscription usage status",
@@ -353,6 +465,13 @@ export default function betterGrok(pi: ExtensionAPI): void {
       updateFooter(ctx);
     }
   }
+
+  pi.registerCommand(RESETS_COMMAND, {
+    description: "Inspect and redeem SuperGrok banked rate-limit resets",
+    handler: async (_args, ctx) => {
+      await redeemBankedReset(ctx);
+    },
+  });
 
   pi.registerCommand(SETTINGS_COMMAND, {
     description: "Open Better Grok settings picker",
@@ -555,6 +674,7 @@ export default function betterGrok(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     invalidateContextUsage();
     invalidateSessionName();
+    multiproviderRefreshCtx = ctx;
     const nextConfig = refresh(ctx);
     fastController.initializeForSession(ctx, nextConfig, pi.getFlag(FLAG) === true);
     if (
@@ -566,6 +686,9 @@ export default function betterGrok(pi: ExtensionAPI): void {
     refreshFooterTotals(ctx);
     updateFooter(ctx);
     usageController.start(ctx);
+    if (nextConfig.usage.enabled && isGrokSubscriptionModel(ctx, nextConfig)) {
+      resetController.start(ctx);
+    }
     if (fastController.active) ctx.ui.notify(fastController.stateText(nextConfig), "info");
   });
 
@@ -623,6 +746,7 @@ export default function betterGrok(pi: ExtensionAPI): void {
     invalidateContextUsage();
     invalidateSessionName();
     usageController.shutdown();
+    resetController.stop();
   });
 
   pi.on("before_provider_request", (event, ctx) => {

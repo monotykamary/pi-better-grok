@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getActiveMultiproviderService } from "./multiprovider.ts";
 import { piAgentDir } from "./paths.ts";
 
 // Native pi providers that may hold an xAI OAuth credential, in preference order.
@@ -14,8 +15,15 @@ export const GROK_CLI_LEGACY_AUTH_SCOPE_KEY = "https://accounts.x.ai/sign-in";
 
 export type GrokCredential = {
   token: string;
-  source: "modelRegistry" | "authFile" | "grokCli";
+  source: "multiprovider" | "modelRegistry" | "authFile" | "grokCli";
 };
+
+// Credential context slice; the multiprovider resolver keys pool affinity off
+// the session, so a sessionManager must be present for that path.
+export type GrokCredentialContext = Pick<
+  ExtensionContext,
+  "model" | "modelRegistry" | "sessionManager"
+>;
 
 export function isXaiProvider(provider: unknown): provider is XaiProviderId {
   return typeof provider === "string" && (XAI_PROVIDER_IDS as readonly string[]).includes(provider);
@@ -197,8 +205,23 @@ export function readGrokCliToken(env: NodeJS.ProcessEnv = process.env): string |
 }
 
 export async function resolveGrokCredential(
-  ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+  ctx: GrokCredentialContext,
 ): Promise<GrokCredential | null> {
+  // A pooled account pinned for this session (pi-multiprovider /switch-account)
+  // wins over pi's own credential: subscription usage is per-account. Resolve
+  // in native xAI provider-id preference order.
+  const multiprovider = getActiveMultiproviderService();
+  if (multiprovider && ctx) {
+    for (const providerId of providerIdsFor(ctx)) {
+      try {
+        const resolved = await multiprovider.resolveActiveAccountAuth(providerId, ctx);
+        const token = resolved?.accessToken?.trim();
+        if (token) return { token, source: "multiprovider" };
+      } catch {
+        // Fall through to pi-owned credential resolution.
+      }
+    }
+  }
   const registry = (ctx as { modelRegistry?: unknown })?.modelRegistry;
   const modelRuntime = (ctx as { modelRuntime?: unknown })?.modelRuntime;
   if (registry && typeof registry === "object" && "find" in registry) {
