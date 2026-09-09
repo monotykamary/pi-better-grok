@@ -360,13 +360,28 @@ export function mapGrokRedeemStatus(
   );
 }
 
+export type ResetNetworkProfile = { cookies?: string; userAgent?: string };
+
+let networkProfile: ResetNetworkProfile | undefined;
+
+// Optional Cloudflare clearance profile: cookies captured from a grok.com
+// browser session (at minimum cf_clearance) plus the user-agent that solved
+// the challenge. Cloudflare binds the clearance to the user-agent and IP, and
+// pi runs on the same machine as the browser, so only the user-agent must match.
+export function setGrokResetNetworkProfile(profile: ResetNetworkProfile | undefined): void {
+  networkProfile = profile?.cookies || profile?.userAgent ? profile : undefined;
+}
+
 function resetHeaders(credential: GrokCredential): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${credential.token}`,
     "X-XAI-Token-Auth": GROK_CLI_AUTH_HEADER,
     "Content-Type": GRPC_WEB_CONTENT_TYPE,
     "x-grpc-web": "1",
   };
+  if (networkProfile?.cookies) headers.Cookie = networkProfile.cookies;
+  if (networkProfile?.userAgent) headers["User-Agent"] = networkProfile.userAgent;
+  return headers;
 }
 
 async function postGrokRpc(
@@ -393,7 +408,9 @@ async function postGrokRpc(
     if (response.headers.get("cf-mitigated") === "challenge") {
       throw new ResetError(
         "challenge",
-        `grok.com is serving a Cloudflare browser challenge (HTTP ${response.status}); banked reset data cannot be fetched from a non-browser client.`,
+        networkProfile?.cookies
+          ? `grok.com answered with a Cloudflare challenge even with the configured clearance cookie (HTTP ${response.status}); it likely expired or no longer matches the browser user-agent. Re-copy it from a grok.com browser session.`
+          : `grok.com is serving a Cloudflare browser challenge (HTTP ${response.status}); banked reset data cannot be fetched from a non-browser client. Set resets.cookies and resets.userAgent in the Better Grok config from a grok.com browser session to enable it.`,
         response.status,
       );
     }

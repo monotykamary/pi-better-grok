@@ -36,7 +36,9 @@ SuperGrok plans earn banked rate-limit reset tokens: redeeming one restores the 
 
 The inventory and redeem calls use the grok.com consumer billing gRPC-Web service (`prod_mc_billing.ConsumerUiSvc/GetRemainingResets` and `RedeemReset`) that the web usage page itself calls, authenticated with the same xAI OAuth token as the usage meter. This surface is undocumented; request shapes are pinned in `src/resets.ts` and schema drift is expected.
 
-**Known limitation:** grok.com fronts this RPC with a Cloudflare managed challenge, which browser-fingerprinted clients (Electron apps) pass but plain CLI runtimes cannot — the edge answers with `403 · cf-mitigated: challenge` regardless of headers or credentials. When that happens the widget hides the count and `/grok-resets` explains the challenge instead of misreporting it as an auth failure. The wiring is live end to end, so the count appears in any environment where the fetch can succeed.
+**Cloudflare requirement (worked around):** grok.com fronts this RPC with a managed challenge that non-browser clients cannot solve — even a perfect Chrome TLS impersonation (curl-impersonate) is challenged, because the site requires a `cf_clearance` cookie issued after a browser solves the challenge once. The cookie is bound to the browser's user-agent and IP. This is the same mechanism community Grok proxies (e.g. grok2api) rely on.
+
+Because pi runs on the same machine (and IP) as your browser, supplying both values in config unlocks the surface. To get them: open grok.com in your browser, DevTools → Application → Cookies → copy `cf_clearance`; Network → any request → copy the `User-Agent` request header. When the clearance expires, `/grok-resets` says so explicitly and you re-copy the cookie. Without a clearance configured, the widget hides the count and `/grok-resets` explains the challenge instead of misreporting it as an auth failure.
 
 ## pi-multiprovider
 
@@ -58,7 +60,8 @@ JSON config at `~/.pi/agent/extensions/pi-better-grok.json` (global) or `<projec
     "showResetTimes": true,
     "showBankedResets": true
   },
-  "footer": { "mode": "status" }
+  "footer": { "mode": "status" },
+  "resets": { "cookies": "", "userAgent": "" }
 }
 ```
 

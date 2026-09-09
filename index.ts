@@ -29,6 +29,7 @@ import {
   formatGrokResetOutcome,
   redeemGrokResetForSession,
   selectGrokResetToken,
+  setGrokResetNetworkProfile,
 } from "./src/resets.ts";
 import { ResetController } from "./src/reset-controller.ts";
 import {
@@ -194,6 +195,11 @@ export default function betterGrok(pi: ExtensionAPI): void {
 
   function refresh(ctx: ExtensionContext): ResolvedConfig {
     cachedConfig = resolveConfig(ctx.cwd || process.cwd());
+    setGrokResetNetworkProfile(
+      cachedConfig.resets.cookies || cachedConfig.resets.userAgent
+        ? { cookies: cachedConfig.resets.cookies, userAgent: cachedConfig.resets.userAgent }
+        : undefined,
+    );
     return cachedConfig;
   }
 

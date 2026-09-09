@@ -29,6 +29,14 @@ export type UsageConfig = {
 };
 export type FooterConfig = { mode?: FooterMode };
 
+// Cloudflare fronts the grok.com billing gRPC with a managed challenge that
+// non-browser runtimes cannot solve. A clearance cookie captured from a grok.com
+// browser session (bound to the browser user-agent and IP) unlocks the fetch.
+export type ResetConfig = {
+  cookies?: string;
+  userAgent?: string;
+};
+
 export interface ConfigFile {
   persistState?: boolean;
   active?: boolean;
@@ -37,6 +45,7 @@ export interface ConfigFile {
   fast?: FastConfig;
   usage?: UsageConfig;
   footer?: FooterConfig;
+  resets?: ResetConfig;
 }
 
 export interface SupportedModel {
@@ -57,6 +66,7 @@ export interface ResolvedConfig {
   fast: Required<FastConfig>;
   usage: Required<UsageConfig>;
   footer: Required<FooterConfig>;
+  resets: Required<ResetConfig>;
 }
 
 export const DEFAULT_FAST_CONFIG: Required<FastConfig> = { effort: "low" };
@@ -68,6 +78,7 @@ export const DEFAULT_USAGE_CONFIG: Required<UsageConfig> = {
   showBankedResets: true,
 };
 export const DEFAULT_FOOTER_CONFIG: Required<FooterConfig> = { mode: "status" };
+export const DEFAULT_RESET_CONFIG: Required<ResetConfig> = { cookies: "", userAgent: "" };
 export const DEFAULT_CONFIG: ConfigFile = {
   persistState: true,
   active: false,
@@ -76,6 +87,7 @@ export const DEFAULT_CONFIG: ConfigFile = {
   fast: DEFAULT_FAST_CONFIG,
   usage: DEFAULT_USAGE_CONFIG,
   footer: DEFAULT_FOOTER_CONFIG,
+  resets: DEFAULT_RESET_CONFIG,
 };
 
 type SettingsOptionSection = "footer" | "usage" | "fast";
@@ -322,5 +334,6 @@ export function resolveConfig(cwd: string, home = homedir(), env = process.env):
     fast: mergedSection(DEFAULT_FAST_CONFIG, globalRaw.fast, projectRaw.fast),
     usage: mergedSection(DEFAULT_USAGE_CONFIG, globalRaw.usage, projectRaw.usage),
     footer: mergedSection(DEFAULT_FOOTER_CONFIG, globalRaw.footer, projectRaw.footer),
+    resets: mergedSection(DEFAULT_RESET_CONFIG, globalRaw.resets, projectRaw.resets),
   };
 }

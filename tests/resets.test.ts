@@ -22,6 +22,7 @@ import {
   redeemGrokResetForSession,
   ResetError,
   selectGrokResetToken,
+  setGrokResetNetworkProfile,
   summarizeResetTokens,
   type GrokResetToken,
 } from "../src/resets.ts";
@@ -306,6 +307,31 @@ describe("fetchGrokResetCredits", () => {
     expect(Array.from(body)).toEqual([0, 0, 0, 0, 0]);
   });
 
+  test("sends the configured clearance cookie and user-agent", async () => {
+    setGrokResetNetworkProfile({ cookies: "cf_clearance=abc123", userAgent: "Browser/9.0" });
+    try {
+      const fetchMock = stubResetsFetch();
+      await fetchGrokResetCredits(credential());
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(init.headers).toMatchObject({
+        Cookie: "cf_clearance=abc123",
+        "User-Agent": "Browser/9.0",
+      });
+    } finally {
+      setGrokResetNetworkProfile(undefined);
+    }
+  });
+
+  test("omits clearance headers without a configured profile", async () => {
+    setGrokResetNetworkProfile(undefined);
+    const fetchMock = stubResetsFetch();
+    await fetchGrokResetCredits(credential());
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Cookie).toBeUndefined();
+    expect(headers["User-Agent"]).toBeUndefined();
+  });
+
   test("maps grpc-status 16 to an auth error and unknown statuses to zero credits", async () => {
     stubResetsFetch({ listStatus: "16" });
     await expect(fetchGrokResetCredits(credential())).rejects.toThrow(ResetError);
@@ -345,6 +371,14 @@ describe("fetchGrokResetCredits", () => {
     expect(error).toBeInstanceOf(ResetError);
     expect((error as ResetError).code).toBe("challenge");
     expect((error as ResetError).message).toContain("Cloudflare");
+
+    setGrokResetNetworkProfile({ cookies: "cf_clearance=stale" });
+    try {
+      const stale = await fetchGrokResetCredits(credential()).catch((e) => e);
+      expect((stale as ResetError).message).toContain("expired");
+    } finally {
+      setGrokResetNetworkProfile(undefined);
+    }
   });
 
   test("refuses to hit the network without a token", async () => {
