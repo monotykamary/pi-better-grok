@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBankedResetsSuffix,
   formatPercent,
   formatResetCountdown,
   formatUsageDetail,
@@ -110,6 +111,43 @@ describe("formatters", () => {
   it("renders the footer usage line without reset info", () => {
     const snapshot = parseUsageSnapshot(weeklyCreditsPayload, NOW);
     expect(formatUsageSnapshot(snapshot, { showResetTimes: false }, NOW)).toBe("Usage: 66% left");
+  });
+
+  it("appends the banked reset count to the usage line", () => {
+    const snapshot = parseUsageSnapshot(weeklyCreditsPayload, NOW);
+    const line = formatUsageSnapshot(snapshot, { showResetTimes: true, bankedResets: 1 }, NOW);
+    expect(line).toContain("↺");
+    expect(line).toContain("1 banked reset");
+    expect(formatUsageSnapshot(snapshot, { showResetTimes: false, bankedResets: 2 }, NOW)).toBe(
+      "Usage: 66% left · 2 banked resets",
+    );
+    expect(
+      formatUsageSnapshot(
+        snapshot,
+        { showResetTimes: true, showBankedResets: false, bankedResets: 2 },
+        NOW,
+      ),
+    ).not.toContain("banked");
+  });
+
+  it("omits the banked reset count when none are available", () => {
+    const snapshot = parseUsageSnapshot(weeklyCreditsPayload, NOW);
+    expect(
+      formatUsageSnapshot(snapshot, { showResetTimes: true, bankedResets: 0 }, NOW),
+    ).not.toContain("banked");
+    expect(
+      formatUsageSnapshot(snapshot, { showResetTimes: true, bankedResets: null }, NOW),
+    ).not.toContain("banked");
+  });
+
+  it("formats the banked reset suffix", () => {
+    expect(formatBankedResetsSuffix(null)).toBeNull();
+    expect(formatBankedResetsSuffix(undefined)).toBeNull();
+    expect(formatBankedResetsSuffix(0)).toBeNull();
+    expect(formatBankedResetsSuffix(-1)).toBeNull();
+    expect(formatBankedResetsSuffix(1.5)).toBeNull();
+    expect(formatBankedResetsSuffix(1)).toBe("1 banked reset");
+    expect(formatBankedResetsSuffix(3)).toBe("3 banked resets");
   });
 
   it("renders detail lines including product usage", () => {

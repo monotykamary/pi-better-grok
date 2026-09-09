@@ -25,6 +25,7 @@ export type UsageConfig = {
   refreshIntervalMs?: number;
   showOnlyOnSubscriptionModels?: boolean;
   showResetTimes?: boolean;
+  showBankedResets?: boolean;
 };
 export type FooterConfig = { mode?: FooterMode };
 
@@ -64,6 +65,7 @@ export const DEFAULT_USAGE_CONFIG: Required<UsageConfig> = {
   refreshIntervalMs: 60_000,
   showOnlyOnSubscriptionModels: true,
   showResetTimes: true,
+  showBankedResets: true,
 };
 export const DEFAULT_FOOTER_CONFIG: Required<FooterConfig> = { mode: "status" };
 export const DEFAULT_CONFIG: ConfigFile = {
@@ -192,6 +194,16 @@ export const USAGE_SETTING_DESCRIPTORS: SettingsOptionDescriptor[] = [
     values: ["true", "false"],
     parse: (rawValue) => rawValue === "true",
     current: (config) => String(config.usage.showResetTimes),
+  },
+  {
+    id: "usage.showBankedResets",
+    section: "usage",
+    key: "showBankedResets",
+    label: "Banked reset count",
+    description: "Show the available banked SuperGrok reset count in the usage status line.",
+    values: ["true", "false"],
+    parse: (rawValue) => rawValue === "true",
+    current: (config) => String(config.usage.showBankedResets),
   },
 ];
 

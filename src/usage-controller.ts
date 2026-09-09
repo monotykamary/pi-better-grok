@@ -59,15 +59,18 @@ export class UsageController {
   private readonly getConfig: (ctx: ExtensionContext) => ResolvedConfig;
   private readonly updateFooter: (ctx: ExtensionContext) => void;
   private readonly fetchSnapshot: FetchUsageSnapshot;
+  private readonly getBankedResets: (() => number | null) | undefined;
 
   constructor(
     getConfig: (ctx: ExtensionContext) => ResolvedConfig,
     updateFooter: (ctx: ExtensionContext) => void,
     fetchSnapshot: FetchUsageSnapshot,
+    getBankedResets?: () => number | null,
   ) {
     this.getConfig = getConfig;
     this.updateFooter = updateFooter;
     this.fetchSnapshot = fetchSnapshot;
+    this.getBankedResets = getBankedResets;
   }
 
   get snapshot(): UsageSnapshot | undefined {
@@ -83,7 +86,10 @@ export class UsageController {
       !this.usageError &&
       cfg.usage.enabled &&
       isGrokSubscriptionModel(ctx, cfg, isUsingOAuth)
-      ? formatUsageSnapshot(this.usageSnapshot, cfg.usage)
+      ? formatUsageSnapshot(this.usageSnapshot, {
+          ...cfg.usage,
+          bankedResets: this.getBankedResets?.() ?? null,
+        })
       : undefined;
   }
 
@@ -99,7 +105,10 @@ export class UsageController {
       this.usageUpdatedAt && Date.now() - this.usageUpdatedAt > cfg.usage.refreshIntervalMs * 2
         ? ` · stale`
         : "";
-    return `${formatUsageSnapshot(this.usageSnapshot, cfg.usage)}${stale}`;
+    return `${formatUsageSnapshot(this.usageSnapshot, {
+      ...cfg.usage,
+      bankedResets: this.getBankedResets?.() ?? null,
+    })}${stale}`;
   }
 
   formatDetail(ctx: ExtensionContext): string {

@@ -230,9 +230,20 @@ export function formatCents(cents: number | null): string {
   return typeof cents === "number" ? `$${(cents / 100).toFixed(2)}` : "--";
 }
 
+export type UsageStatusOptions = {
+  showResetTimes: boolean;
+  showBankedResets?: boolean;
+  bankedResets?: number | null;
+};
+
+export function formatBankedResetsSuffix(count: number | null | undefined): string | null {
+  if (typeof count !== "number" || !Number.isInteger(count) || count <= 0) return null;
+  return `${count} banked reset${count === 1 ? "" : "s"}`;
+}
+
 export function formatUsageSnapshot(
   snapshot: UsageSnapshot,
-  options: { showResetTimes: boolean },
+  options: UsageStatusOptions,
   now = Date.now(),
 ): string {
   const used = snapshot.creditUsagePercent;
@@ -244,6 +255,9 @@ export function formatUsageSnapshot(
     const clock = formatResetClock(seconds, now);
     if (countdown && clock) parts.push(`↺ ${countdown} - ${clock}`);
   }
+  const banked =
+    options.showBankedResets === false ? null : formatBankedResetsSuffix(options.bankedResets);
+  if (banked) parts.push(banked);
   return parts.join(" · ");
 }
 

@@ -28,7 +28,7 @@ Data comes from the same revision-pinned Grok subscription surface used by the c
 1. `GET https://cli-chat-proxy.grok.com/v1/user` (identity)
 2. `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` (with the `x-userid` header)
 
-Status widget line: `Usage: 66% left · ↺ 5d5h - Mon 5:34 PM` (weekly period + reset clock). Defaults to the widget area below the editor, like pi-better-openai; set `"footer": {"mode": "replace"}` for the full custom footer.
+Status widget line: `Usage: 66% left · ↺ 5d5h - Mon 5:34 PM · 1 banked reset` (weekly period, reset clock, and available banked reset count). Defaults to the widget area below the editor, like pi-better-openai; set `"footer": {"mode": "replace"}` for the full custom footer.
 
 ## Banked resets
 
@@ -53,7 +53,8 @@ JSON config at `~/.pi/agent/extensions/pi-better-grok.json` (global) or `<projec
     "enabled": true,
     "refreshIntervalMs": 60000,
     "showOnlyOnSubscriptionModels": true,
-    "showResetTimes": true
+    "showResetTimes": true,
+    "showBankedResets": true
   },
   "footer": { "mode": "status" }
 }

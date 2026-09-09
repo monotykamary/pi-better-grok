@@ -85,6 +85,30 @@ describe("UsageController", () => {
     expect(controller.statusLine(ctx, config)).toContain("Usage: 66% left");
   });
 
+  it("appends the banked reset count from the supplier", async () => {
+    const config = makeConfig();
+    const fetchImpl = vi.fn().mockResolvedValue(snapshot);
+    const controller = new UsageController(
+      () => config,
+      vi.fn(),
+      fetchImpl,
+      () => 1,
+    );
+    const ctx = makeCtx();
+    await controller.refresh(ctx, { force: true });
+    expect(controller.statusLine(ctx, config)).toContain("1 banked reset");
+    expect(controller.formatStatus(ctx)).toContain("1 banked reset");
+
+    const noneController = new UsageController(
+      () => config,
+      vi.fn(),
+      fetchImpl,
+      () => 0,
+    );
+    await noneController.refresh(ctx, { force: true });
+    expect(noneController.statusLine(ctx, config)).not.toContain("banked");
+  });
+
   it("records errors and hides the status line", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("xAI authentication was rejected."));
     const config = makeConfig();

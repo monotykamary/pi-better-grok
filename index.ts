@@ -152,7 +152,12 @@ export default function betterGrok(pi: ExtensionAPI): void {
   let sessionNameCached = false;
   let cachedSessionNameLeafId: string | null | undefined;
   let cachedSessionName: string | undefined;
-  const usageController = new UsageController(config, updateFooter, fetchUsageSnapshot);
+  const usageController = new UsageController(
+    config,
+    updateFooter,
+    fetchUsageSnapshot,
+    () => resetController.snapshot?.credits.availableCount ?? null,
+  );
   const resetController = new ResetController();
   let multiproviderService: MultiproviderService | undefined;
   let unsubscribeMultiprovider: (() => void) | undefined;
