@@ -36,6 +36,8 @@ SuperGrok plans earn banked rate-limit reset tokens: redeeming one restores the 
 
 The inventory and redeem calls use the grok.com consumer billing gRPC-Web service (`prod_mc_billing.ConsumerUiSvc/GetRemainingResets` and `RedeemReset`) that the web usage page itself calls, authenticated with the same xAI OAuth token as the usage meter. This surface is undocumented; request shapes are pinned in `src/resets.ts` and schema drift is expected.
 
+**Known limitation:** grok.com fronts this RPC with a Cloudflare managed challenge, which browser-fingerprinted clients (Electron apps) pass but plain CLI runtimes cannot — the edge answers with `403 · cf-mitigated: challenge` regardless of headers or credentials. When that happens the widget hides the count and `/grok-resets` explains the challenge instead of misreporting it as an auth failure. The wiring is live end to end, so the count appears in any environment where the fetch can succeed.
+
 ## pi-multiprovider
 
 When [pi-multiprovider](https://github.com/monotykamary/pi-multiprovider) pools several `xai` accounts, the session's active account (chosen with `/switch-account`) is resolved first for usage display and banked resets, and the usage widget refreshes on every switch. Without that extension, credential resolution is unchanged: pi's native `xai` OAuth, then `xai-oauth`/`xai-auth` auth-file entries, then the Grok CLI store.

@@ -42,7 +42,14 @@ export type GrokRedeemCode = "reset" | "no_credit" | "already_redeemed";
 
 export type GrokRedeemResult = { code: GrokRedeemCode };
 
-export type ResetErrorCode = "auth" | "http" | "grpc" | "invalid" | "oversize" | "transport";
+export type ResetErrorCode =
+  | "auth"
+  | "challenge"
+  | "http"
+  | "grpc"
+  | "invalid"
+  | "oversize"
+  | "transport";
 
 export class ResetError extends Error {
   readonly code: ResetErrorCode;
@@ -383,6 +390,13 @@ async function postGrokRpc(
     throw new ResetError("transport", `Grok reset request failed: ${message}`);
   }
   if (!response.ok) {
+    if (response.headers.get("cf-mitigated") === "challenge") {
+      throw new ResetError(
+        "challenge",
+        `grok.com is serving a Cloudflare browser challenge (HTTP ${response.status}); banked reset data cannot be fetched from a non-browser client.`,
+        response.status,
+      );
+    }
     if (response.status === 401 || response.status === 403) {
       throw new ResetError(
         "auth",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveGrokCredential } from "../src/grok-auth.ts";
 import { maskIdentifier } from "../src/format.ts";
+import { requestGrokResetCredits, ResetError } from "../src/resets.ts";
 import { formatUsageDetail, formatUsageSnapshot, requestGrokUsage } from "../src/usage.ts";
 
 // Runs only when GROK_LIVE=1. Uses the real pi auth store (~/.pi/agent/auth.json,
@@ -33,5 +34,34 @@ describe.skipIf(!RUN)("live xAI subscription surface (GROK_LIVE=1)", () => {
     console.log(`userId(masked): ${maskIdentifier(userId)}`);
     console.log(`footer: ${footer}`);
     console.log(`detail:\n${formatUsageDetail(snapshot)}`);
+  });
+
+  // Read-only inventory listing. This probe never redeems a reset token.
+  it("fetches the real banked reset inventory (read-only, no redemption)", async () => {
+    const credential = await resolveGrokCredential({
+      model: undefined,
+      modelRegistry: undefined,
+    } as never);
+    expect(credential).not.toBeNull();
+    try {
+      const credits = (await requestGrokResetCredits({
+        model: undefined,
+        modelRegistry: undefined,
+      } as never))!;
+      console.log(`banked resets available: ${credits.availableCount}`);
+      for (const token of credits.tokens) {
+        console.log(
+          `  token(masked): ${maskIdentifier(token.tokenId)} · granted=${token.grantedAtMs} · expires=${token.expiresAtMs}`,
+        );
+      }
+      expect(credits.availableCount).toBeGreaterThanOrEqual(0);
+      expect(credits.availableCount).toBe(credits.tokens.length);
+    } catch (error) {
+      // From CLI runtimes grok.com answers with a Cloudflare managed challenge;
+      // only browser-fingerprinted stacks (Electron) get through. Expect exactly that.
+      expect(error).toBeInstanceOf(ResetError);
+      expect((error as ResetError).code).toBe("challenge");
+      console.log("inventory blocked by Cloudflare challenge (expected from non-browser runtimes)");
+    }
   });
 });

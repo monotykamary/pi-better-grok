@@ -330,6 +330,23 @@ describe("fetchGrokResetCredits", () => {
     await expect(fetchGrokResetCredits(credential())).rejects.toThrow(/HTTP 500/);
   });
 
+  test("maps a Cloudflare challenge to the challenge code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<!DOCTYPE html><html>Just a moment...</html>", {
+            status: 403,
+            headers: { "cf-mitigated": "challenge", server: "cloudflare" },
+          }),
+      ),
+    );
+    const error = await fetchGrokResetCredits(credential()).catch((e) => e);
+    expect(error).toBeInstanceOf(ResetError);
+    expect((error as ResetError).code).toBe("challenge");
+    expect((error as ResetError).message).toContain("Cloudflare");
+  });
+
   test("refuses to hit the network without a token", async () => {
     const fetchMock = stubResetsFetch();
     await expect(fetchGrokResetCredits({ token: "", source: "authFile" })).rejects.toThrow(
