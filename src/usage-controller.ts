@@ -3,7 +3,13 @@ import type { ResolvedConfig } from "./config.ts";
 import { isXaiProvider, readPiStoredOAuthToken } from "./grok-auth.ts";
 import { sanitizeDiagnosticError } from "./format.ts";
 import { currentModelKey } from "./fast-controller.ts";
-import { formatUsageDetail, formatUsageSnapshot, type UsageSnapshot } from "./usage.ts";
+import {
+  type UsageSegment,
+  type UsageSnapshot,
+  formatUsageDetail,
+  formatUsageSnapshot,
+  usageSegments,
+} from "./usage.ts";
 
 export function isGrokSubscriptionModel(
   ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
@@ -77,20 +83,30 @@ export class UsageController {
     return this.usageSnapshot;
   }
 
+  statusSegments(
+    ctx: ExtensionContext,
+    cfg = this.getConfig(ctx),
+    isUsingOAuth?: boolean,
+  ): UsageSegment[] | undefined {
+    return this.usageSnapshot &&
+      !this.usageError &&
+      cfg.usage.enabled &&
+      isGrokSubscriptionModel(ctx, cfg, isUsingOAuth)
+      ? usageSegments(this.usageSnapshot, {
+          ...cfg.usage,
+          bankedResets: this.getBankedResets?.() ?? null,
+        })
+      : undefined;
+  }
+
   statusLine(
     ctx: ExtensionContext,
     cfg = this.getConfig(ctx),
     isUsingOAuth?: boolean,
   ): string | undefined {
-    return this.usageSnapshot &&
-      !this.usageError &&
-      cfg.usage.enabled &&
-      isGrokSubscriptionModel(ctx, cfg, isUsingOAuth)
-      ? formatUsageSnapshot(this.usageSnapshot, {
-          ...cfg.usage,
-          bankedResets: this.getBankedResets?.() ?? null,
-        })
-      : undefined;
+    return this.statusSegments(ctx, cfg, isUsingOAuth)
+      ?.map((segment) => segment.text)
+      .join("");
   }
 
   formatStatus(ctx: ExtensionContext): string {

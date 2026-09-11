@@ -85,6 +85,27 @@ describe("UsageController", () => {
     expect(controller.statusLine(ctx, config)).toContain("Usage: 66% left");
   });
 
+  it("exposes severity-tagged segments for the footer", async () => {
+    const config = makeConfig({
+      usage: { ...makeConfig().usage, showResetTimes: false },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(snapshot);
+    const controller = new UsageController(() => config, vi.fn(), fetchImpl);
+    const ctx = makeCtx();
+    await controller.refresh(ctx, { force: true });
+
+    const segments = controller.statusSegments(ctx, config);
+
+    expect(segments).toEqual([
+      { text: "Usage: ", severity: "muted" },
+      { text: "66%", severity: "ok" },
+      { text: " left", severity: "muted" },
+    ]);
+    expect(segments?.map((segment) => segment.text).join("")).toBe(
+      controller.statusLine(ctx, config),
+    );
+  });
+
   it("appends the banked reset count from the supplier", async () => {
     const config = makeConfig();
     const fetchImpl = vi.fn().mockResolvedValue(snapshot);

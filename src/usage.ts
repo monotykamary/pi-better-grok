@@ -241,24 +241,59 @@ export function formatBankedResetsSuffix(count: number | null | undefined): stri
   return `${count} banked reset${count === 1 ? "" : "s"}`;
 }
 
+export type UsageSeverity = "ok" | "warning" | "critical" | "muted";
+
+export type UsageSegment = {
+  text: string;
+  severity: UsageSeverity;
+};
+
+/** Remaining budget at or below these thresholds turns the percentage amber/red. */
+const WARNING_LEFT_PERCENT = 30;
+const CRITICAL_LEFT_PERCENT = 10;
+
+export function severityForLeftPercent(percent: number | null): UsageSeverity {
+  if (percent === null) return "muted";
+  if (percent <= CRITICAL_LEFT_PERCENT) return "critical";
+  if (percent <= WARNING_LEFT_PERCENT) return "warning";
+  return "ok";
+}
+
+export function usageSegments(
+  snapshot: UsageSnapshot,
+  options: UsageStatusOptions,
+  now = Date.now(),
+): UsageSegment[] {
+  const used = snapshot.creditUsagePercent;
+  const left = used === null ? null : clampPercent(100 - used);
+  const segments: UsageSegment[] = [
+    { text: "Usage: ", severity: "muted" },
+    { text: formatPercent(left), severity: severityForLeftPercent(left) },
+    { text: " left", severity: "muted" },
+  ];
+  if (options.showResetTimes) {
+    const seconds = periodSecondsLeft(snapshot, now);
+    const countdown = formatResetCountdown(seconds);
+    const clock = formatResetClock(seconds, now);
+    if (countdown && clock) {
+      segments.push({ text: ` · ↺ ${countdown} - ${clock}`, severity: "muted" });
+    }
+  }
+  const banked =
+    options.showBankedResets === false ? null : formatBankedResetsSuffix(options.bankedResets);
+  if (banked) segments.push({ text: ` · ${banked}`, severity: "muted" });
+  return segments;
+}
+
+/** Flat text form of {@link usageSegments}, used for status lines and notifications. */
 export function formatUsageSnapshot(
   snapshot: UsageSnapshot,
   options: UsageStatusOptions,
   now = Date.now(),
 ): string {
-  const used = snapshot.creditUsagePercent;
-  const left = used === null ? null : clampPercent(100 - used);
-  const parts = [`Usage: ${formatPercent(left)} left`];
-  if (options.showResetTimes) {
-    const seconds = periodSecondsLeft(snapshot, now);
-    const countdown = formatResetCountdown(seconds);
-    const clock = formatResetClock(seconds, now);
-    if (countdown && clock) parts.push(`↺ ${countdown} - ${clock}`);
-  }
-  const banked =
-    options.showBankedResets === false ? null : formatBankedResetsSuffix(options.bankedResets);
-  if (banked) parts.push(banked);
-  return parts.join(" · ");
+  return usageSegments(snapshot, options, now)
+    .map((segment) => segment.text)
+    .join("");
 }
 
 export function formatUsageDetail(snapshot: UsageSnapshot): string {

@@ -7,6 +7,8 @@ import {
   formatUsageSnapshot,
   parseUsageSnapshot,
   periodTypeLabel,
+  severityForLeftPercent,
+  usageSegments,
 } from "../src/usage.ts";
 
 const NOW = Date.parse("2026-08-27T12:00:00Z");
@@ -160,5 +162,36 @@ describe("formatters", () => {
   it("handles a fully used budget", () => {
     const snapshot = parseUsageSnapshot({ config: { creditUsagePercent: 100 } }, NOW);
     expect(formatUsageSnapshot(snapshot, { showResetTimes: false }, NOW)).toBe("Usage: 0% left");
+  });
+});
+
+describe("usage line colours", () => {
+  it("tags the left percent and leaves the rest dim", () => {
+    const snapshot = parseUsageSnapshot(weeklyCreditsPayload, NOW);
+    const segments = usageSegments(snapshot, { showResetTimes: true }, NOW);
+
+    expect(segments[0]).toEqual({ text: "Usage: ", severity: "muted" });
+    expect(segments[1]).toEqual({ text: "66%", severity: "ok" });
+    expect(segments[2]).toEqual({ text: " left", severity: "muted" });
+    expect(segments.filter((segment) => segment.severity !== "muted")).toHaveLength(1);
+    expect(segments.map((segment) => segment.text).join("")).toBe(
+      formatUsageSnapshot(snapshot, { showResetTimes: true }, NOW),
+    );
+  });
+
+  it("escalates severity as the remaining budget drains", () => {
+    expect(severityForLeftPercent(null)).toBe("muted");
+    expect(severityForLeftPercent(31)).toBe("ok");
+    expect(severityForLeftPercent(30)).toBe("warning");
+    expect(severityForLeftPercent(10)).toBe("critical");
+    expect(severityForLeftPercent(0)).toBe("critical");
+  });
+
+  it("flags a nearly spent budget", () => {
+    const snapshot = parseUsageSnapshot({ config: { creditUsagePercent: 95 } }, NOW);
+    const segments = usageSegments(snapshot, { showResetTimes: false }, NOW);
+
+    expect(segments[1]).toEqual({ text: "5%", severity: "critical" });
+    expect(segments.map((segment) => segment.text).join("")).toBe("Usage: 5% left");
   });
 });

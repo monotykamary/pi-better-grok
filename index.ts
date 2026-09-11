@@ -7,7 +7,12 @@
  * cli-chat-proxy.grok.com identity-first billing surface using pi's native
  * xAI OAuth credential.
  */
-import { type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type ExtensionContext,
+  type Theme,
+  type ThemeColor,
+} from "@earendil-works/pi-coding-agent";
 import { Container, SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
 import { CONFIG_BASENAME, STATUS_KEY } from "./src/identity.ts";
 import {
@@ -56,6 +61,8 @@ import {
   parseUsageSnapshot,
   requestGrokUsage,
   UsageError,
+  type UsageSegment,
+  type UsageSeverity,
   type UsageSnapshot,
 } from "./src/usage.ts";
 import {
@@ -84,6 +91,46 @@ const requireSettingsListTheme = (): SettingsListTheme => {
   }
   return loadedSettingsListTheme;
 };
+
+const USAGE_SEVERITY_COLORS: Record<UsageSeverity, ThemeColor> = {
+  ok: "success",
+  warning: "warning",
+  critical: "error",
+  muted: "dim",
+};
+
+/**
+ * Keep a coloured segment on one line. Unlike sanitizeStatusText this leaves the
+ * spacing shared by neighbouring segments ("5h: " + "90%") intact.
+ */
+function flattenSegment(text: string): string {
+  return text.replace(/[\r\n\t]+/g, " ");
+}
+
+/**
+ * Colour a usage line segment by segment: the percentage carries the severity
+ * colour while the label, countdown and banked resets stay dim.
+ */
+function colorizeUsageSegments(segments: UsageSegment[], theme: Theme): string {
+  return segments
+    .map((segment) =>
+      theme.fg(USAGE_SEVERITY_COLORS[segment.severity], flattenSegment(segment.text)),
+    )
+    .join("");
+}
+
+/** Pair the fast-mode segment with the usage segments for the status widget. */
+function statusWidgetParts(
+  fast: string | undefined,
+  usage: UsageSegment[] | undefined,
+): UsageSegment[] | undefined {
+  const parts: UsageSegment[] = fast ? [{ text: fast, severity: "muted" }] : [];
+  if (usage?.length) {
+    if (parts.length > 0) parts.push({ text: " · ", severity: "muted" });
+    parts.push(...usage);
+  }
+  return parts.length > 0 ? parts : undefined;
+}
 
 class DynamicBorder {
   readonly #color: (text: string) => string;
@@ -548,8 +595,10 @@ export default function betterGrok(pi: ExtensionAPI): void {
           parts.push(contextText);
 
           const cfg = config(ctx);
-          const usageStatusLine = usageController.statusLine(ctx, cfg, usingSubscription);
-          const usageLine = usageStatusLine ? theme.fg("dim", usageStatusLine) : undefined;
+          const usageStatusSegments = usageController.statusSegments(ctx, cfg, usingSubscription);
+          const usageLine = usageStatusSegments
+            ? colorizeUsageSegments(usageStatusSegments, theme)
+            : undefined;
 
           let statsLeft = parts.join(" ");
           let statsLeftWidth = visibleWidth(statsLeft);
@@ -630,22 +679,22 @@ export default function betterGrok(pi: ExtensionAPI): void {
     statusInstalled = text !== undefined;
   }
 
-  function setStatusWidget(ctx: ExtensionContext, text: string | undefined): void {
-    if (!text && !statusWidgetInstalled) return;
+  function setStatusWidget(ctx: ExtensionContext, parts: UsageSegment[] | undefined): void {
+    if (!parts && !statusWidgetInstalled) return;
     ctx.ui.setWidget(
       STATUS_KEY,
-      text
+      parts
         ? (_tui, theme) => ({
             invalidate() {},
             render(width: number): string[] {
-              const line = theme.fg("dim", sanitizeStatusText(text));
+              const line = colorizeUsageSegments(parts, theme);
               return [truncateToWidth(line, width, theme.fg("dim", "..."))];
             },
           })
         : undefined,
       { placement: "belowEditor" },
     );
-    statusWidgetInstalled = text !== undefined;
+    statusWidgetInstalled = parts !== undefined;
   }
 
   function updateFooter(ctx: ExtensionContext): void {
@@ -678,8 +727,8 @@ export default function betterGrok(pi: ExtensionAPI): void {
     }
 
     const fast = fastController.statusSegment(ctx, cfg);
-    const usage = usageController.statusLine(ctx, cfg);
-    setStatusWidget(ctx, [fast, usage].filter(Boolean).join(" · ") || undefined);
+    const usage = usageController.statusSegments(ctx, cfg);
+    setStatusWidget(ctx, statusWidgetParts(fast, usage));
   }
 
   pi.on("session_start", (_event, ctx) => {
