@@ -1,6 +1,6 @@
 {
   "name": "@monotykamary/pi-better-grok",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Improve Grok/xAI in pi with fast mode, subscription usage stats, banked reset redemption, multiprovider pools, footer polish, and settings — mirroring pi-better-openai.",
   "keywords": [
     "footer",
