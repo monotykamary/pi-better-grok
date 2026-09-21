@@ -73,7 +73,14 @@ import {
 } from "./src/grok-auth.ts";
 import { currentModelKey, FastController, modelList, supportsFast } from "./src/fast-controller.ts";
 import { isGrokSubscriptionModel, UsageController } from "./src/usage-controller.ts";
-import { registerGrok47OnProviders } from "./src/xai-models.ts";
+import { piAgentDir } from "./src/paths.ts";
+import {
+  GROK_47_ID,
+  ensureGrok47InModelsJsonFile,
+  lastSessionModel,
+  registerGrok47OnProviders,
+  shouldRestoreGrok47,
+} from "./src/xai-models.ts";
 import { sep } from "node:path";
 
 // pi-core's getSettingsListTheme pulls the host module graph into this
@@ -176,6 +183,17 @@ export function abbreviateHomePath(
 }
 
 export default function betterGrok(pi: ExtensionAPI): void {
+  // models.json is the only catalog layer that exists when pi restores the
+  // last model, before session_start. registerProvider is too late and replaces
+  // the xAI list, which drops grok-4.7 back out of scoped-model matching.
+  if (!process.env.VITEST) {
+    try {
+      ensureGrok47InModelsJsonFile(piAgentDir());
+    } catch {
+      // Missing home dir / unreadable models.json must not block the extension.
+    }
+  }
+
   const fetchUsageSnapshot = async (ctx: ExtensionContext): Promise<UsageSnapshot> => {
     const credential = await resolveGrokCredential(ctx);
     if (!credential) {
@@ -732,22 +750,47 @@ export default function betterGrok(pi: ExtensionAPI): void {
     setStatusWidget(ctx, statusWidgetParts(fast, usage));
   }
 
-  const ensureGrok47 = (ctx: ExtensionContext): void => {
-    if (typeof pi.registerProvider !== "function") return;
-    const getAll = ctx.modelRegistry?.getAll;
-    if (typeof getAll !== "function") return;
-    try {
-      registerGrok47OnProviders(
-        (name, config) => pi.registerProvider(name, config),
-        getAll.call(ctx.modelRegistry),
-      );
-    } catch {
-      // Catalog registration must not break session startup.
+  const ensureGrok47 = async (ctx: ExtensionContext): Promise<void> => {
+    if (!process.env.VITEST) {
+      try {
+        ensureGrok47InModelsJsonFile(piAgentDir());
+      } catch {
+        // Keep going; in-memory fallback below may still register the model.
+      }
     }
+    try {
+      await ctx.modelRegistry?.refresh?.({ allowNetwork: false });
+    } catch {
+      // Offline refresh failures should not block session startup.
+    }
+    const registry = ctx.modelRegistry;
+    if (typeof registry?.find === "function" && !registry.find("xai", GROK_47_ID)) {
+      const getAll = registry.getAll;
+      if (typeof pi.registerProvider === "function" && typeof getAll === "function") {
+        try {
+          registerGrok47OnProviders(
+            (name, config) => pi.registerProvider(name, config),
+            getAll.call(registry),
+          );
+        } catch {
+          // Catalog registration must not break session startup.
+        }
+      }
+    }
+    const branch =
+      typeof ctx.sessionManager.getBranch === "function"
+        ? ctx.sessionManager.getBranch()
+        : typeof ctx.sessionManager.getEntries === "function"
+          ? ctx.sessionManager.getEntries()
+          : [];
+    const saved = lastSessionModel(branch);
+    if (!shouldRestoreGrok47(ctx.model, saved) || !saved) return;
+    const restored = registry?.find?.(saved.provider, saved.modelId);
+    if (restored) await pi.setModel(restored);
   };
 
   pi.on("session_start", (_event, ctx) => {
-    ensureGrok47(ctx);
+    void ensureGrok47(ctx);
     invalidateContextUsage();
     invalidateSessionName();
     multiproviderRefreshCtx = ctx;

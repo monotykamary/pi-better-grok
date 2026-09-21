@@ -1,11 +1,19 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   GROK_47_FALLBACK,
   GROK_47_ID,
   GROK_47_NAME,
+  ensureGrok47InModelsJsonFile,
   grok47FromTemplate,
+  grok47ModelsJsonPath,
+  lastSessionModel,
   registerGrok47OnProviders,
+  shouldRestoreGrok47,
   upsertGrok47,
+  upsertGrok47InModelsJson,
   type CatalogModel,
 } from "../src/xai-models.ts";
 
@@ -104,5 +112,81 @@ describe("registerGrok47OnProviders", () => {
     );
     expect(registered).toEqual([]);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("upsertGrok47InModelsJson", () => {
+  it("adds grok-4.7 onto builtin xai without dropping unknown fields", () => {
+    const { next, changed } = upsertGrok47InModelsJson({
+      extra: 1,
+      providers: {
+        anthropic: { baseUrl: "https://example.invalid" },
+        xai: { headers: { "X-Test": "1" }, models: [{ id: "grok-4.6", name: "Grok 4.6" }] },
+      },
+    });
+    expect(changed).toBe(true);
+    expect(next.extra).toBe(1);
+    const providers = next.providers as Record<string, Record<string, unknown>>;
+    const xai = providers.xai;
+    expect(providers.anthropic).toEqual({ baseUrl: "https://example.invalid" });
+    expect(xai?.headers).toEqual({ "X-Test": "1" });
+    const models = xai?.models as Array<{ id: string }>;
+    expect(models.map((model) => model.id)).toEqual(["grok-4.6", GROK_47_ID]);
+  });
+
+  it("is a no-op when grok-4.7 is already listed", () => {
+    const raw = { providers: { xai: { models: [{ id: GROK_47_ID }] } } };
+    expect(upsertGrok47InModelsJson(raw)).toEqual({ next: raw, changed: false });
+  });
+});
+
+describe("ensureGrok47InModelsJsonFile", () => {
+  it("creates models.json and does not rewrite when grok-4.7 is present", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-better-grok-models-"));
+    expect(ensureGrok47InModelsJsonFile(dir)).toBe(true);
+    const path = grok47ModelsJsonPath(dir);
+    const first = readFileSync(path, "utf8");
+    expect(JSON.parse(first).providers.xai.models[0].id).toBe(GROK_47_ID);
+    expect(ensureGrok47InModelsJsonFile(dir)).toBe(false);
+    expect(readFileSync(path, "utf8")).toBe(first);
+  });
+
+  it("does not clobber an unreadable models.json", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-better-grok-models-bad-"));
+    mkdirSync(dir, { recursive: true });
+    const path = grok47ModelsJsonPath(dir);
+    writeFileSync(path, "{not json");
+    expect(ensureGrok47InModelsJsonFile(dir)).toBe(false);
+    expect(readFileSync(path, "utf8")).toBe("{not json");
+  });
+});
+
+describe("shouldRestoreGrok47", () => {
+  it("restores when the session saved grok-4.7 but the live model fell back", () => {
+    expect(
+      lastSessionModel([
+        { type: "message" },
+        { type: "model_change", provider: "xai", modelId: "grok-4.6" },
+        { type: "model_change", provider: "xai", modelId: GROK_47_ID },
+      ]),
+    ).toEqual({ provider: "xai", modelId: GROK_47_ID });
+    expect(
+      shouldRestoreGrok47(
+        { provider: "xai", id: "grok-4.6" },
+        { provider: "xai", modelId: GROK_47_ID },
+      ),
+    ).toBe(true);
+    expect(
+      shouldRestoreGrok47(
+        { provider: "xai", id: GROK_47_ID },
+        { provider: "xai", modelId: GROK_47_ID },
+      ),
+    ).toBe(false);
+    expect(
+      shouldRestoreGrok47(
+        { provider: "xai", id: "grok-4.6" },
+        { provider: "xai", modelId: "grok-4.6" },
+      ),
+    ).toBe(false);
   });
 });

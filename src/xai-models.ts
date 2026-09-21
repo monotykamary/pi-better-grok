@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
 export const GROK_47_ID = "grok-4.7";
@@ -14,10 +16,27 @@ const GROK_47_LONG_CONTEXT_TIER = {
   cacheWrite: 0,
 } as const;
 
+const GROK_47_COST = {
+  input: 2,
+  output: 6,
+  cacheRead: 0.5,
+  cacheWrite: 0,
+  tiers: [{ ...GROK_47_LONG_CONTEXT_TIER }],
+};
+
+const GROK_47_THINKING_LEVEL_MAP = {
+  off: null,
+  minimal: null,
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: null,
+} as const;
+
 /**
  * Native xAI Grok 4.7, cloned from pi-core's grok-4.6 catalog plus the public
- * 4.7 card: 500k context, $2/$6 per 1M, cache read $0.50, 2x rates above 200k,
- * reasoning efforts low/medium/high/xhigh. Used only when a sibling template exists.
+ * 4.7 card. Used as an in-memory fallback when models.json cannot be updated.
  */
 export const GROK_47_FALLBACK: ProviderModelConfig = {
   id: GROK_47_ID,
@@ -25,23 +44,25 @@ export const GROK_47_FALLBACK: ProviderModelConfig = {
   api: "openai-responses",
   baseUrl: "https://api.x.ai/v1",
   reasoning: true,
-  thinkingLevelMap: {
-    off: null,
-    minimal: null,
-    low: "low",
-    medium: "medium",
-    high: "high",
-    xhigh: "xhigh",
-    max: null,
-  },
+  thinkingLevelMap: { ...GROK_47_THINKING_LEVEL_MAP },
   input: ["text", "image"],
-  cost: {
-    input: 2,
-    output: 6,
-    cacheRead: 0.5,
-    cacheWrite: 0,
-    tiers: [{ ...GROK_47_LONG_CONTEXT_TIER }],
-  },
+  cost: { ...GROK_47_COST, tiers: [{ ...GROK_47_LONG_CONTEXT_TIER }] },
+  contextWindow: 500_000,
+  maxTokens: 500_000,
+  compat: { supportsLongCacheRetention: false },
+};
+
+/**
+ * models.json custom model layered onto builtin `xai`. api/baseUrl are omitted so
+ * pi inherits them from grok-4.6 instead of replacing the provider catalog.
+ */
+export const GROK_47_MODELS_JSON_DEFINITION = {
+  id: GROK_47_ID,
+  name: GROK_47_NAME,
+  reasoning: true,
+  thinkingLevelMap: { ...GROK_47_THINKING_LEVEL_MAP },
+  input: ["text", "image"] as Array<"text" | "image">,
+  cost: { ...GROK_47_COST, tiers: [{ ...GROK_47_LONG_CONTEXT_TIER }] },
   contextWindow: 500_000,
   maxTokens: 500_000,
   compat: { supportsLongCacheRetention: false },
@@ -159,4 +180,82 @@ export function registerGrok47OnProviders(
     registered.push(entry.provider);
   }
   return registered;
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+export function upsertGrok47InModelsJson(raw: unknown): {
+  next: Record<string, unknown>;
+  changed: boolean;
+} {
+  const root = { ...asObject(raw) };
+  const providers = { ...asObject(root.providers) };
+  const xai = { ...asObject(providers.xai) };
+  const models = Array.isArray(xai.models) ? [...xai.models] : [];
+  const alreadyPresent = models.some((entry) => asObject(entry)?.id === GROK_47_ID);
+  if (alreadyPresent) {
+    return { next: asObject(raw) ?? root, changed: false };
+  }
+  models.push({
+    ...GROK_47_MODELS_JSON_DEFINITION,
+    thinkingLevelMap: { ...GROK_47_THINKING_LEVEL_MAP },
+    input: [...GROK_47_MODELS_JSON_DEFINITION.input],
+    cost: { ...GROK_47_COST, tiers: [{ ...GROK_47_LONG_CONTEXT_TIER }] },
+    compat: { ...GROK_47_MODELS_JSON_DEFINITION.compat },
+  });
+  xai.models = models;
+  providers.xai = xai;
+  root.providers = providers;
+  return { next: root, changed: true };
+}
+
+export function grok47ModelsJsonPath(agentDir: string): string {
+  return join(agentDir, "models.json");
+}
+
+export function ensureGrok47InModelsJsonFile(agentDir: string): boolean {
+  const path = grok47ModelsJsonPath(agentDir);
+  let parsed: unknown = {};
+  if (existsSync(path)) {
+    try {
+      parsed = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      return false;
+    }
+  }
+  const { next, changed } = upsertGrok47InModelsJson(parsed);
+  if (!changed) return false;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+  return true;
+}
+
+export type SessionModelRef = { provider: string; modelId: string };
+
+export function lastSessionModel(
+  entries: ReadonlyArray<{ type: string; provider?: string; modelId?: string }>,
+): SessionModelRef | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (
+      entry?.type === "model_change" &&
+      typeof entry.provider === "string" &&
+      typeof entry.modelId === "string"
+    ) {
+      return { provider: entry.provider, modelId: entry.modelId };
+    }
+  }
+  return undefined;
+}
+
+export function shouldRestoreGrok47(
+  current: { provider?: string; id?: string } | undefined,
+  saved: SessionModelRef | undefined,
+): boolean {
+  if (!saved || saved.modelId !== GROK_47_ID) return false;
+  return current?.id !== saved.modelId || current?.provider !== saved.provider;
 }

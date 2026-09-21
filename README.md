@@ -1,6 +1,6 @@
 # pi-better-grok
 
-Better Grok/xAI for [pi](https://pi.dev) — mirrors the [pi-better-openai](https://github.com/monotykamary/pi-better-openai) UX for SuperGrok subscribers: fast mode, subscription usage in the footer, footer polish, and a settings picker. Until pi-core ships it, Grok 4.7 is layered onto the existing `xai` (and sibling Grok) providers as a custom model.
+Better Grok/xAI for [pi](https://pi.dev) — mirrors the [pi-better-openai](https://github.com/monotykamary/pi-better-openai) UX for SuperGrok subscribers: fast mode, subscription usage in the footer, footer polish, and a settings picker. Until pi-core ships it, Grok 4.7 is layered onto the builtin `xai` provider via `~/.pi/agent/models.json` so session restore and scoped-model matching can see it at startup.
 
 ## Install
 
