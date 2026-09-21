@@ -8,10 +8,13 @@ export const FOOTER_MODES = ["replace", "status", "off"] as const;
 export const FAST_EFFORTS = ["low", "medium", "high"] as const;
 
 export const DEFAULT_SUPPORTED_MODELS = [
+  "xai/grok-4.7",
   "xai/grok-4.6",
   "xai/grok-4.5",
+  "xai-oauth/grok-4.7",
   "xai-oauth/grok-4.6",
   "xai-oauth/grok-4.5",
+  "grok-build/grok-4.7",
   "grok-build/grok-4.6",
   "grok-build/grok-4.5",
 ] as const;

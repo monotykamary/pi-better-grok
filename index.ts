@@ -73,6 +73,7 @@ import {
 } from "./src/grok-auth.ts";
 import { currentModelKey, FastController, modelList, supportsFast } from "./src/fast-controller.ts";
 import { isGrokSubscriptionModel, UsageController } from "./src/usage-controller.ts";
+import { registerGrok47OnProviders } from "./src/xai-models.ts";
 import { sep } from "node:path";
 
 // pi-core's getSettingsListTheme pulls the host module graph into this
@@ -731,7 +732,22 @@ export default function betterGrok(pi: ExtensionAPI): void {
     setStatusWidget(ctx, statusWidgetParts(fast, usage));
   }
 
+  const ensureGrok47 = (ctx: ExtensionContext): void => {
+    if (typeof pi.registerProvider !== "function") return;
+    const getAll = ctx.modelRegistry?.getAll;
+    if (typeof getAll !== "function") return;
+    try {
+      registerGrok47OnProviders(
+        (name, config) => pi.registerProvider(name, config),
+        getAll.call(ctx.modelRegistry),
+      );
+    } catch {
+      // Catalog registration must not break session startup.
+    }
+  };
+
   pi.on("session_start", (_event, ctx) => {
+    ensureGrok47(ctx);
     invalidateContextUsage();
     invalidateSessionName();
     multiproviderRefreshCtx = ctx;
