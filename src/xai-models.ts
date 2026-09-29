@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
+type ProviderChatModelConfig = Extract<ProviderModelConfig, { type?: "chat" }>;
+
 export const GROK_47_ID = "grok-4.7";
 export const GROK_47_NAME = "Grok 4.7";
 
@@ -38,7 +40,7 @@ const GROK_47_THINKING_LEVEL_MAP = {
  * Native xAI Grok 4.7, cloned from pi-core's grok-4.6 catalog plus the public
  * 4.7 card. Used as an in-memory fallback when models.json cannot be updated.
  */
-export const GROK_47_FALLBACK: ProviderModelConfig = {
+export const GROK_47_FALLBACK: ProviderChatModelConfig = {
   id: GROK_47_ID,
   name: GROK_47_NAME,
   api: "openai-responses",
@@ -72,21 +74,21 @@ export const GROK_47_MODELS_JSON_DEFINITION = {
 export type CatalogModel = {
   id: string;
   name: string;
-  api?: ProviderModelConfig["api"];
+  api?: ProviderChatModelConfig["api"];
   provider: string;
   baseUrl?: string;
   reasoning: boolean;
-  thinkingLevelMap?: ProviderModelConfig["thinkingLevelMap"];
-  input: ProviderModelConfig["input"];
-  cost: ProviderModelConfig["cost"];
-  promptCache?: ProviderModelConfig["promptCache"];
+  thinkingLevelMap?: ProviderChatModelConfig["thinkingLevelMap"];
+  input: ProviderChatModelConfig["input"];
+  cost: ProviderChatModelConfig["cost"];
+  promptCache?: ProviderChatModelConfig["promptCache"];
   contextWindow: number;
   maxTokens: number;
   headers?: Record<string, string>;
-  compat?: ProviderModelConfig["compat"];
+  compat?: ProviderChatModelConfig["compat"];
 };
 
-export function catalogModelToProviderConfig(model: CatalogModel): ProviderModelConfig {
+export function catalogModelToProviderConfig(model: CatalogModel): ProviderChatModelConfig {
   return {
     id: model.id,
     name: model.name,
@@ -104,7 +106,7 @@ export function catalogModelToProviderConfig(model: CatalogModel): ProviderModel
   };
 }
 
-export function grok47FromTemplate(template: CatalogModel | undefined): ProviderModelConfig {
+export function grok47FromTemplate(template: CatalogModel | undefined): ProviderChatModelConfig {
   if (!template) {
     return {
       ...GROK_47_FALLBACK,
@@ -143,7 +145,9 @@ export function grok47FromTemplate(template: CatalogModel | undefined): Provider
  * Return the existing models plus grok-4.7, or undefined when 4.7 is already present
  * or the provider has nothing to layer onto.
  */
-export function upsertGrok47(existing: readonly CatalogModel[]): ProviderModelConfig[] | undefined {
+export function upsertGrok47(
+  existing: readonly CatalogModel[],
+): ProviderChatModelConfig[] | undefined {
   if (existing.length === 0) return undefined;
   if (existing.some((model) => model.id === GROK_47_ID)) return undefined;
   const template =
@@ -153,7 +157,7 @@ export function upsertGrok47(existing: readonly CatalogModel[]): ProviderModelCo
   return [...existing.map(catalogModelToProviderConfig), grok47FromTemplate(template)];
 }
 
-export type Grok47Registration = { provider: string; models: ProviderModelConfig[] };
+export type Grok47Registration = { provider: string; models: ProviderChatModelConfig[] };
 
 export function grok47Registrations(all: readonly CatalogModel[]): Grok47Registration[] {
   const byProvider = new Map<string, CatalogModel[]>();
@@ -173,10 +177,16 @@ export function grok47Registrations(all: readonly CatalogModel[]): Grok47Registr
 export function registerGrok47OnProviders(
   registerProvider: (name: string, config: { models: ProviderModelConfig[] }) => void,
   all: readonly CatalogModel[],
+  nonChat: readonly (Exclude<ProviderModelConfig, ProviderChatModelConfig> & {
+    provider: string;
+  })[] = [],
 ): string[] {
   const registered: string[] = [];
   for (const entry of grok47Registrations(all)) {
-    registerProvider(entry.provider, { models: entry.models });
+    // Pi 0.99 replaces every operation when a legacy catalog is registered.
+    registerProvider(entry.provider, {
+      models: [...entry.models, ...nonChat.filter((model) => model.provider === entry.provider)],
+    });
     registered.push(entry.provider);
   }
   return registered;

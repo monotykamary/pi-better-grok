@@ -1,6 +1,6 @@
 {
   "name": "@monotykamary/pi-better-grok",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Improve Grok/xAI in pi with fast mode, subscription usage stats, banked reset redemption, multiprovider pools, footer polish, and settings — mirroring pi-better-openai.",
   "keywords": [
     "footer",
@@ -43,11 +43,12 @@
     "lint": "oxlint --deny-warnings index.ts src/*.ts tests/*.ts",
     "lint:fix": "oxlint --fix index.ts src/*.ts tests/*.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:pi": "node scripts/test-pi-compat.mjs"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.87.0",
-    "@earendil-works/pi-tui": "0.87.0",
+    "@earendil-works/pi-coding-agent": "0.99.0",
+    "@earendil-works/pi-tui": "0.99.0",
     "@types/node": "~22.19.0",
     "oxfmt": "^0.47.0",
     "oxlint": "^1.62.0",
@@ -59,8 +60,8 @@
     "@earendil-works/pi-tui": "*"
   },
   "overrides": {
-    "@earendil-works/pi-agent-core": "0.87.0",
-    "@earendil-works/pi-ai": "0.87.0",
+    "@earendil-works/pi-agent-core": "0.99.0",
+    "@earendil-works/pi-ai": "0.99.0",
     "brace-expansion": "5.0.9",
     "nanoid": "3.3.18",
     "postcss": "8.5.25",

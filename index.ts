@@ -771,6 +771,9 @@ export default function betterGrok(pi: ExtensionAPI): void {
           registerGrok47OnProviders(
             (name, config) => pi.registerProvider(name, config),
             getAll.call(registry),
+            typeof registry.getModelsOfType === "function"
+              ? [...registry.getModelsOfType("image"), ...registry.getModelsOfType("classifier")]
+              : [],
           );
         } catch {
           // Catalog registration must not break session startup.

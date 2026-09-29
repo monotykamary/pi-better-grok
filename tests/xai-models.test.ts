@@ -87,6 +87,33 @@ describe("grok47FromTemplate", () => {
 });
 
 describe("registerGrok47OnProviders", () => {
+  it("preserves non-chat operations only on their owning provider", () => {
+    const image = {
+      type: "image" as const,
+      provider: "xai",
+      id: "grok-image",
+      name: "Grok Image",
+      api: "test-image",
+      input: ["text" as const],
+      output: ["image" as const],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+    const calls: Array<{ provider: string; types: Array<string | undefined>; ids: string[] }> = [];
+    registerGrok47OnProviders(
+      (provider, config) => {
+        calls.push({
+          provider,
+          types: config.models.map((model) => model.type),
+          ids: config.models.map((model) => model.id),
+        });
+      },
+      [grok("xai", "grok-4.6"), grok("grok-build", "grok-4.5")],
+      [image],
+    );
+    expect(calls.find((call) => call.provider === "xai")?.ids).toContain("grok-image");
+    expect(calls.find((call) => call.provider === "xai")?.types).toContain("image");
+    expect(calls.find((call) => call.provider === "grok-build")?.ids).not.toContain("grok-image");
+  });
   it("layers grok-4.7 onto present Grok providers only", () => {
     const calls: Array<{ provider: string; ids: string[] }> = [];
     const registered = registerGrok47OnProviders(
