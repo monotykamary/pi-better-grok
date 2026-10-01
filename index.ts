@@ -792,8 +792,9 @@ export default function betterGrok(pi: ExtensionAPI): void {
     if (restored) await pi.setModel(restored);
   };
 
-  pi.on("session_start", (_event, ctx) => {
-    void ensureGrok47(ctx);
+  pi.on("session_start", async (_event, ctx) => {
+    // Pi must own this work: detached refreshes can outlive a disposed context.
+    await ensureGrok47(ctx);
     invalidateContextUsage();
     invalidateSessionName();
     multiproviderRefreshCtx = ctx;
@@ -865,6 +866,7 @@ export default function betterGrok(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
+    multiproviderRefreshCtx = undefined;
     invalidateContextUsage();
     invalidateSessionName();
     usageController.shutdown();

@@ -20,7 +20,7 @@ try {
     SettingsManager,
     VERSION,
   } = await import("@earendil-works/pi-coding-agent");
-  assert.equal(VERSION, "0.99.0", "test the actual pinned Pi host, not a stale override");
+  assert.equal(VERSION, "1.0.0", "test the actual pinned Pi host, not a stale override");
   const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   for (const name of [
     "@earendil-works/pi-ai",
@@ -70,6 +70,11 @@ try {
     settingsManager,
     sessionManager: SessionManager.inMemory(home),
   }));
+  const errors = [];
+  session.extensionRunner.onError((error) => errors.push(error));
+  await session.bindExtensions({});
+  await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+  assert.deepEqual(errors, [], "real session startup and shutdown must succeed");
   const names = new Set();
   for (const extension of loaded.extensions) {
     for (const [name, { definition }] of extension.tools) {
@@ -88,7 +93,10 @@ try {
     `${manifest.name}: Pi ${VERSION} warning-free manifest load; ${loaded.extensions.length} extensions, ${names.size} tools registered`,
   );
 } finally {
-  session?.dispose();
+  if (session) {
+    await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    session.dispose();
+  }
   globalThis.fetch = previousFetch;
   if (previousHome === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = previousHome;
