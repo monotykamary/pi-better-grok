@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.13
+
+- Load the `/grok-settings` picker, the `/grok-resets` flow and the banked-reset client at first use instead of at startup. The startup refresh and usage polling are unchanged.
+
 ## 0.3.8
 
 - Validate Pi 1.0.0 with exact development pins and wildcard host peers.
