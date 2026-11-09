@@ -2,7 +2,8 @@
 
 ## Project layout
 
-- `index.ts` registers the pi extension commands, events, settings UI, footer/status rendering, usage polling, and fast-mode lifecycle.
+- `index.ts` registers the pi extension commands, events, footer/status rendering, usage polling, and fast-mode lifecycle.
+- Command-time surfaces load on first use: `src/settings-ui.ts` (`/grok-settings`), `src/reset-command.ts` (`/grok-resets`), and `src/resets.ts` (with the first banked-reset refresh). Keep them out of `index.ts`'s static imports; pass session state in through their host objects.
 - `src/` contains focused helpers for config, formatting, xAI OAuth credential resolution, and Grok subscription usage.
 - `tests/` contains Vitest coverage. Prefer adding targeted tests near the changed behavior.
 - `.pi/` is local runtime/config/generated output and is ignored by git.

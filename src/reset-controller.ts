@@ -1,6 +1,17 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { sanitizeDiagnosticError } from "./format.ts";
-import { type GrokResetCredits, requestGrokResetCredits } from "./resets.ts";
+import type { GrokResetCredits } from "./resets.ts";
+
+// The gRPC-Web codec and redeem flow in resets.ts load on the first refresh,
+// not with the extension: sessions on non-Grok models never pay for them.
+let resetsModule: Promise<typeof import("./resets.ts")> | undefined;
+const loadResets = (): Promise<typeof import("./resets.ts")> => {
+  resetsModule ??= import("./resets.ts").catch((error: unknown) => {
+    resetsModule = undefined;
+    throw error;
+  });
+  return resetsModule;
+};
 
 export const BANKED_RESET_CACHE_TTL_MS = 5 * 60_000;
 const BANKED_RESET_REQUEST_TIMEOUT_MS = 10_000;
@@ -49,6 +60,7 @@ export class ResetController {
     const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeoutSignal]) : timeoutSignal;
     const task = (async () => {
       try {
+        const { requestGrokResetCredits } = await loadResets();
         const credits = await requestGrokResetCredits(ctx, signal);
         if (credits) {
           this.cache = { credits, updatedAt: Date.now() };

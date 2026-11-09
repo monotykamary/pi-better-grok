@@ -7,49 +7,31 @@
  * cli-chat-proxy.grok.com identity-first billing surface using pi's native
  * xAI OAuth credential.
  */
-import {
-  type ExtensionAPI,
-  type ExtensionContext,
-  type Theme,
-  type ThemeColor,
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  Theme,
+  ThemeColor,
 } from "@earendil-works/pi-coding-agent";
-import { Container, SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
 import { CONFIG_BASENAME, STATUS_KEY } from "./src/identity.ts";
-import {
-  formatTokens,
-  sanitizeDiagnosticError,
-  sanitizeStatusText,
-  truncateToWidth,
-  visibleWidth,
-} from "./src/format.ts";
+import { formatTokens, sanitizeStatusText, truncateToWidth, visibleWidth } from "./src/format.ts";
 import {
   isMultiproviderService,
   MULTIPROVIDER_SERVICE_EVENT,
   setActiveMultiproviderService,
   type MultiproviderService,
 } from "./src/multiprovider.ts";
-import {
-  buildGrokResetConfirmation,
-  formatGrokResetChoice,
-  formatGrokResetOutcome,
-  redeemGrokResetForSession,
-  selectGrokResetToken,
-  setGrokResetNetworkProfile,
-} from "./src/resets.ts";
+import { setGrokResetNetworkProfile } from "./src/reset-network-profile.ts";
 import { ResetController } from "./src/reset-controller.ts";
 import {
-  applySettingToRawConfig,
   configPaths,
   DEFAULT_CONFIG,
   DEFAULT_SUPPORTED_MODELS,
-  FAST_SETTING_DESCRIPTORS,
-  FOOTER_SETTING_DESCRIPTORS,
   normalizeModelKeys,
   parseModelKey,
   parseModels,
   readRawConfig,
   resolveConfig,
-  USAGE_SETTING_DESCRIPTORS,
   writeConfig,
   type ResolvedConfig,
 } from "./src/config.ts";
@@ -83,22 +65,10 @@ import {
 } from "./src/xai-models.ts";
 import { sep } from "node:path";
 
-// pi-core's getSettingsListTheme pulls the host module graph into this
-// extension's loader. The settings picker is a command-time surface, so the
-// theme loads when it first opens.
-let loadedSettingsListTheme: SettingsListTheme | undefined;
-const loadSettingsListTheme = async (): Promise<SettingsListTheme> => {
-  loadedSettingsListTheme ??= (
-    await import("@earendil-works/pi-coding-agent")
-  ).getSettingsListTheme();
-  return loadedSettingsListTheme;
-};
-const requireSettingsListTheme = (): SettingsListTheme => {
-  if (!loadedSettingsListTheme) {
-    throw new Error("Settings list theme accessed before /grok-settings preload");
-  }
-  return loadedSettingsListTheme;
-};
+// Command-time surfaces load on first use, not with the extension: the
+// /grok-settings picker (settings list widgets, pi-core's theme) lives in
+// src/settings-ui.ts and the /grok-resets redeem flow in src/reset-command.ts.
+// resets.ts itself loads with the first banked-reset refresh (reset-controller).
 
 const USAGE_SEVERITY_COLORS: Record<UsageSeverity, ThemeColor> = {
   ok: "success",
@@ -140,33 +110,11 @@ function statusWidgetParts(
   return parts.length > 0 ? parts : undefined;
 }
 
-class DynamicBorder {
-  readonly #color: (text: string) => string;
-
-  constructor(color: (text: string) => string = (str) => str) {
-    this.#color = color;
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    return [this.#color("\u2500".repeat(Math.max(1, width)))];
-  }
-}
-
 const COMMAND = "grok-fast";
 const USAGE_COMMAND = "grok-usage";
 const SETTINGS_COMMAND = "grok-settings";
 const RESETS_COMMAND = "grok-resets";
 const FLAG = "grok-fast";
-
-type SettingsPickerItem = {
-  id: string;
-  label: string;
-  description?: string;
-  currentValue: string;
-  values?: string[];
-};
 
 function hasTerminalUI(ctx: ExtensionContext): boolean {
   return ctx.mode === "tui" || (ctx.mode === undefined && ctx.hasUI);
@@ -371,64 +319,6 @@ export default function betterGrok(pi: ExtensionAPI): void {
     },
   });
 
-  async function redeemBankedReset(ctx: ExtensionContext): Promise<void> {
-    if (!hasTerminalUI(ctx)) {
-      ctx.ui.notify("/grok-resets requires an interactive TUI session.", "warning");
-      return;
-    }
-    let credits = resetController.snapshot?.credits;
-    if (!credits) {
-      await resetController.refresh(ctx, { force: true }).catch(() => {});
-      credits = resetController.snapshot?.credits;
-    }
-    if (!credits) {
-      const reason = resetController.lastError;
-      ctx.ui.notify(`Banked reset lookup failed${reason ? `: ${reason}` : "."}`, "error");
-      return;
-    }
-    void resetController.refresh(ctx).catch(() => {});
-    if (credits.availableCount <= 0) {
-      ctx.ui.notify("No banked Grok resets are available for this account.", "info");
-      return;
-    }
-    let selected = selectGrokResetToken(credits.tokens);
-    if (credits.tokens.length > 1 && selected) {
-      const options = credits.tokens.map((token, index) => formatGrokResetChoice(token, index));
-      const chosen = await ctx.ui.select("Redeem which banked reset?", options);
-      if (chosen === undefined) {
-        ctx.ui.notify("Banked reset redemption cancelled.", "info");
-        return;
-      }
-      selected = credits.tokens[Math.max(0, options.indexOf(chosen))];
-    }
-    const confirmation = buildGrokResetConfirmation({
-      token: selected,
-      availableCount: credits.availableCount,
-      snapshot: usageController.snapshot,
-    });
-    if (!(await ctx.ui.confirm(confirmation.title, confirmation.message))) {
-      ctx.ui.notify("Banked reset redemption cancelled.", "info");
-      return;
-    }
-    try {
-      const timeoutSignal = AbortSignal.timeout(30_000);
-      const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeoutSignal]) : timeoutSignal;
-      const result = await redeemGrokResetForSession(ctx, selected?.tokenId, signal);
-      const outcome = formatGrokResetOutcome(result);
-      ctx.ui.notify(outcome.message, outcome.level);
-      void usageController.refresh(ctx, { force: true });
-      void resetController.refresh(ctx, { force: true }).catch(() => {});
-      updateFooter(ctx);
-    } catch (error) {
-      ctx.ui.notify(
-        `Banked reset redemption failed: ${sanitizeDiagnosticError(
-          error instanceof Error ? error.message : String(error),
-        )}`,
-        "error",
-      );
-    }
-  }
-
   pi.registerCommand(USAGE_COMMAND, {
     description: "Show Grok subscription usage status",
     handler: async (args, ctx) => {
@@ -441,119 +331,41 @@ export default function betterGrok(pi: ExtensionAPI): void {
     },
   });
 
-  function settingsItems(
-    descriptors:
-      | typeof FOOTER_SETTING_DESCRIPTORS
-      | typeof USAGE_SETTING_DESCRIPTORS
-      | typeof FAST_SETTING_DESCRIPTORS,
-    cfg: ResolvedConfig,
-  ): SettingsPickerItem[] {
-    return descriptors.map((descriptor) => ({
-      id: descriptor.id,
-      label: descriptor.label,
-      description: descriptor.description,
-      currentValue: descriptor.current(cfg),
-      values: descriptor.values ? [...descriptor.values] : undefined,
-    }));
-  }
-
-  function buildSettingsSections(cfg: ResolvedConfig): SettingsPickerItem[] {
-    return [
-      { id: "section.footer", label: "Footer", currentValue: "" },
-      ...settingsItems(FOOTER_SETTING_DESCRIPTORS, cfg),
-      { id: "section.usage", label: "Usage", currentValue: "" },
-      ...settingsItems(USAGE_SETTING_DESCRIPTORS, cfg),
-      { id: "section.fast", label: "Fast mode", currentValue: "" },
-      ...settingsItems(FAST_SETTING_DESCRIPTORS, cfg),
-    ];
-  }
-
-  function writeSetting(ctx: ExtensionContext, id: string, rawValue: string): void {
-    const cfg = refresh(ctx);
-    const current = readRawConfig(cfg.configPath);
-    if (id === "fast.enabled") {
-      fastController.setDesired(ctx, cfg, rawValue === "true");
-    }
-    const nextRawConfig = applySettingToRawConfig(current, id, rawValue, {
-      persistState: cfg.persistState,
-      active: fastController.active,
-      desiredActive: fastController.desiredActive,
-    });
-    writeConfig(cfg.configPath, nextRawConfig);
-    if (id === "usage.refreshIntervalMs") usageController.restart(ctx);
-    updateFooter(ctx);
-  }
-
-  async function showSettingsPicker(ctx: ExtensionContext): Promise<void> {
-    if (!hasTerminalUI(ctx)) {
-      ctx.ui.notify("Better Grok settings require interactive TUI mode.", "warning");
-      return;
-    }
-    await loadSettingsListTheme();
-    try {
-      await ctx.ui.custom((tui, theme, _kb, done) => {
-        const container = new Container();
-        container.addChild(new DynamicBorder((text) => theme.fg("border", text)));
-        container.addChild(
-          new (class {
-            render(_width: number) {
-              const cfg = config(ctx);
-              return [
-                theme.bold(theme.fg("accent", "Better Grok Settings")),
-                theme.fg("muted", cfg.configPath),
-                "",
-              ];
-            }
-            invalidate() {}
-          })(),
-        );
-        const settingsList = new SettingsList(
-          buildSettingsSections(refresh(ctx)),
-          8,
-          requireSettingsListTheme(),
-          (id, newValue) => {
-            if (!id.startsWith("section.")) writeSetting(ctx, id, newValue);
-            settingsList.updateValue(
-              id,
-              buildSettingsSections(config(ctx)).find((item) => item.id === id)?.currentValue ??
-                newValue,
-            );
-            tui.requestRender();
-          },
-          () => done(undefined),
-          { enableSearch: true },
-        );
-        container.addChild(settingsList);
-        container.addChild(new DynamicBorder((text) => theme.fg("border", text)));
-        return {
-          render(width: number) {
-            return container.render(width);
-          },
-          invalidate() {
-            container.invalidate();
-          },
-          handleInput(data: string) {
-            settingsList.handleInput(data);
-            tui.requestRender();
-          },
-        };
-      });
-    } finally {
-      updateFooter(ctx);
-    }
-  }
-
   pi.registerCommand(RESETS_COMMAND, {
     description: "Inspect and redeem SuperGrok banked rate-limit resets",
     handler: async (_args, ctx) => {
-      await redeemBankedReset(ctx);
+      if (!hasTerminalUI(ctx)) {
+        ctx.ui.notify("/grok-resets requires an interactive TUI session.", "warning");
+        return;
+      }
+      const { redeemBankedReset } = await import("./src/reset-command.ts");
+      await redeemBankedReset(ctx, {
+        resetController,
+        usageSnapshot: () => usageController.snapshot,
+        afterRedeem: (redeemCtx) => {
+          void usageController.refresh(redeemCtx, { force: true });
+          void resetController.refresh(redeemCtx, { force: true }).catch(() => {});
+          updateFooter(redeemCtx);
+        },
+      });
     },
   });
 
   pi.registerCommand(SETTINGS_COMMAND, {
     description: "Open Better Grok settings picker",
     handler: async (_args, ctx) => {
-      await showSettingsPicker(ctx);
+      if (!hasTerminalUI(ctx)) {
+        ctx.ui.notify("Better Grok settings require interactive TUI mode.", "warning");
+        return;
+      }
+      const { showSettingsPicker } = await import("./src/settings-ui.ts");
+      await showSettingsPicker(ctx, {
+        config,
+        refresh,
+        fastController,
+        usageController,
+        updateFooter,
+      });
     },
   });
 
