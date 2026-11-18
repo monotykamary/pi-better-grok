@@ -32,7 +32,7 @@ import {
   parseModels,
   readRawConfig,
   resolveConfig,
-  writeConfig,
+  updateConfig,
   type ResolvedConfig,
 } from "./src/config.ts";
 import {
@@ -228,11 +228,11 @@ export default function betterGrok(pi: ExtensionAPI): void {
       desiredActive: fastController.desiredActive,
     };
     if (!nextConfig.persistState) return;
-    writeConfig(nextConfig.configPath, {
-      ...readRawConfig(nextConfig.configPath),
+    updateConfig(nextConfig.configPath, (current) => ({
+      ...current,
       active: fastController.active,
       desiredActive: fastController.desiredActive,
-    });
+    }));
   }
 
   function refreshFooterTotals(ctx: ExtensionContext): void {

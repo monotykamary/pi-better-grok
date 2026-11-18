@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -178,13 +186,45 @@ describe("ensureGrok47InModelsJsonFile", () => {
     expect(readFileSync(path, "utf8")).toBe(first);
   });
 
-  it("does not clobber an unreadable models.json", () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-better-grok-models-bad-"));
-    mkdirSync(dir, { recursive: true });
-    const path = grok47ModelsJsonPath(dir);
-    writeFileSync(path, "{not json");
-    expect(ensureGrok47InModelsJsonFile(dir)).toBe(false);
-    expect(readFileSync(path, "utf8")).toBe("{not json");
+  it.each(["{not json", "null", '{"providers":{"xai":{"models":{}}}}'])(
+    "does not clobber malformed models.json (%s)",
+    (raw) => {
+      const dir = mkdtempSync(join(tmpdir(), "pi-better-grok-models-bad-"));
+      try {
+        const path = grok47ModelsJsonPath(dir);
+        writeFileSync(path, raw);
+        expect(ensureGrok47InModelsJsonFile(dir)).toBe(false);
+        expect(readFileSync(path, "utf8")).toBe(raw);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("does not publish while a catalog edit holds the shared lock", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-better-grok-models-lock-"));
+    try {
+      const path = grok47ModelsJsonPath(dir);
+      const lock = `${path}.lock`;
+      const fd = openSync(lock, "wx");
+      const otherProvider = { openai: { baseUrl: "https://example.invalid" } };
+      try {
+        writeFileSync(fd, "other writer");
+        expect(ensureGrok47InModelsJsonFile(dir)).toBe(false);
+        expect(readFileSync(lock, "utf8")).toBe("other writer");
+        writeFileSync(path, JSON.stringify({ providers: otherProvider }));
+      } finally {
+        closeSync(fd);
+        unlinkSync(lock);
+      }
+      expect(ensureGrok47InModelsJsonFile(dir)).toBe(true);
+      expect(JSON.parse(readFileSync(path, "utf8")).providers).toMatchObject({
+        ...otherProvider,
+        xai: { models: [{ id: GROK_47_ID }] },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

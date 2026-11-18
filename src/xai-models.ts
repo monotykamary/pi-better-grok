@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import { editJsonObject } from "./json-file.ts";
 
 type ProviderChatModelConfig = Extract<ProviderModelConfig, { type?: "chat" }>;
 
@@ -198,17 +198,22 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-export function upsertGrok47InModelsJson(raw: unknown): {
+export function upsertGrok47InModelsJson(raw: Record<string, unknown> = {}): {
   next: Record<string, unknown>;
   changed: boolean;
 } {
-  const root = { ...asObject(raw) };
-  const providers = { ...asObject(root.providers) };
-  const xai = { ...asObject(providers.xai) };
-  const models = Array.isArray(xai.models) ? [...xai.models] : [];
-  const alreadyPresent = models.some((entry) => asObject(entry)?.id === GROK_47_ID);
-  if (alreadyPresent) {
-    return { next: asObject(raw) ?? root, changed: false };
+  const providers = asObject(raw.providers);
+  const xai = asObject(providers?.xai);
+  if (
+    (raw.providers !== undefined && !providers) ||
+    (providers?.xai !== undefined && !xai) ||
+    (xai?.models !== undefined && !Array.isArray(xai.models))
+  ) {
+    return { next: raw, changed: false };
+  }
+  const models = Array.isArray(xai?.models) ? [...xai.models] : [];
+  if (models.some((entry) => asObject(entry)?.id === GROK_47_ID)) {
+    return { next: raw, changed: false };
   }
   models.push({
     ...GROK_47_MODELS_JSON_DEFINITION,
@@ -217,10 +222,7 @@ export function upsertGrok47InModelsJson(raw: unknown): {
     cost: { ...GROK_47_COST, tiers: [{ ...GROK_47_LONG_CONTEXT_TIER }] },
     compat: { ...GROK_47_MODELS_JSON_DEFINITION.compat },
   });
-  xai.models = models;
-  providers.xai = xai;
-  root.providers = providers;
-  return { next: root, changed: true };
+  return { next: { ...raw, providers: { ...providers, xai: { ...xai, models } } }, changed: true };
 }
 
 export function grok47ModelsJsonPath(agentDir: string): string {
@@ -228,20 +230,15 @@ export function grok47ModelsJsonPath(agentDir: string): string {
 }
 
 export function ensureGrok47InModelsJsonFile(agentDir: string): boolean {
-  const path = grok47ModelsJsonPath(agentDir);
-  let parsed: unknown = {};
-  if (existsSync(path)) {
-    try {
-      parsed = JSON.parse(readFileSync(path, "utf8"));
-    } catch {
-      return false;
-    }
+  try {
+    return editJsonObject(grok47ModelsJsonPath(agentDir), (raw) => {
+      const { next, changed } = upsertGrok47InModelsJson(raw);
+      return changed ? next : undefined;
+    });
+  } catch {
+    // Leave an unreadable, malformed or locked catalog intact; use the in-memory fallback.
+    return false;
   }
-  const { next, changed } = upsertGrok47InModelsJson(parsed);
-  if (!changed) return false;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
-  return true;
 }
 
 export type SessionModelRef = { provider: string; modelId: string };

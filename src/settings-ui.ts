@@ -4,9 +4,8 @@ import {
   applySettingToRawConfig,
   FAST_SETTING_DESCRIPTORS,
   FOOTER_SETTING_DESCRIPTORS,
-  readRawConfig,
   USAGE_SETTING_DESCRIPTORS,
-  writeConfig,
+  updateConfig,
   type ResolvedConfig,
 } from "./config.ts";
 import type { FastController } from "./fast-controller.ts";
@@ -90,16 +89,16 @@ function writeSetting(
   rawValue: string,
 ): void {
   const cfg = host.refresh(ctx);
-  const current = readRawConfig(cfg.configPath);
   if (id === "fast.enabled") {
     host.fastController.setDesired(ctx, cfg, rawValue === "true");
   }
-  const nextRawConfig = applySettingToRawConfig(current, id, rawValue, {
-    persistState: cfg.persistState,
-    active: host.fastController.active,
-    desiredActive: host.fastController.desiredActive,
-  });
-  writeConfig(cfg.configPath, nextRawConfig);
+  updateConfig(cfg.configPath, (current) =>
+    applySettingToRawConfig(current, id, rawValue, {
+      persistState: cfg.persistState,
+      active: host.fastController.active,
+      desiredActive: host.fastController.desiredActive,
+    }),
+  );
   if (id === "usage.refreshIntervalMs") host.usageController.restart(ctx);
   host.updateFooter(ctx);
 }
